@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Enoden 305 AR</title>
+<meta name="description" content="Veja o diorama do bonde Enoden 305 em realidade aumentada, na sua mesa ou no chão, com a câmera do celular.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.4.0/dist/model-viewer.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<style>
+/* Layout: visualizador 3D ocupa a tela; no computador, o bilhete com o QR fica ao lado */
+:root{
+  --bg:#121714; --ink:#f1ecd8; --mute:#b8b39f; --line:rgba(241,236,216,.16); --panel:rgba(20,26,22,.78);
+  --green:#4f8a54; --greenDk:#2f5a35; --cream:#e9dfb6; --paper:#f4eedb; --paperInk:#20301f; --punch:#121714;
+  --display:"Zen Kaku Gothic New","Hiragino Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--display);display:grid;grid-template-columns:1fr minmax(320px,380px);min-height:100%}
+model-viewer{width:100%;height:100%;min-height:60vh;--poster-color:transparent;background:radial-gradient(120% 90% at 50% 30%,#2a332c 0%,#121714 70%)}
+.top{position:absolute;top:calc(14px + env(safe-area-inset-top,0px));left:max(16px,env(safe-area-inset-left,0px));right:16px;display:flex;justify-content:space-between;gap:10px;pointer-events:none}
+.tag{background:var(--panel);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:10px;padding:10px 14px;pointer-events:auto}
+.tag h1{margin:0;font-size:18px;font-weight:900}
+.tag h1 span{color:var(--cream);font-weight:700}
+.tag p{margin:3px 0 0;font:12px/1.4 var(--mono);color:var(--mute)}
+.back{pointer-events:auto;align-self:flex-start;white-space:nowrap;font:500 13px var(--mono);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;text-decoration:none}
+.back:hover{border-color:var(--cream)}
+.arBtn{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(24px + env(safe-area-inset-bottom,0px));font:900 17px var(--display);letter-spacing:.02em;
+  color:#13200f;background:var(--cream);border:0;border-radius:999px;padding:16px 26px;box-shadow:0 10px 30px rgba(0,0,0,.45);cursor:pointer;display:flex;gap:10px;align-items:center;white-space:nowrap}
+.arBtn svg{width:22px;height:22px}
+.arBtn:focus-visible{outline:3px solid var(--green);outline-offset:3px}
+.status{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(92px + env(safe-area-inset-bottom,0px));font:12px/1.4 var(--mono);color:var(--mute);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;max-width:calc(100% - 32px);text-align:center}
+.progress{position:absolute;left:0;right:0;top:0;height:3px;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--cream);transition:width .2s}
+.viewer{position:relative;min-width:0}
+/* bilhete de trem (切符) com o QR */
+aside{display:flex;align-items:center;justify-content:center;padding-block:24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));border-left:1px solid var(--line)}
+.ticket{width:100%;max-width:330px;background:var(--paper);color:var(--paperInk);border-radius:14px;position:relative;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.45)}
+.ticket::before,.ticket::after{content:"";position:absolute;top:118px;width:26px;height:26px;border-radius:50%;background:var(--punch)}
+.ticket::before{left:-13px}.ticket::after{right:-13px}
+.tHead{background:var(--green);color:var(--paper);padding:14px 18px;display:flex;justify-content:space-between;align-items:flex-end}
+.tHead b{font-size:24px;font-weight:900;letter-spacing:.06em}
+.tHead small{font:500 11px var(--mono);opacity:.85;text-align:right}
+.route{display:flex;align-items:center;gap:8px;padding:12px 18px 14px;border-bottom:2px dashed rgba(32,48,31,.25);font-weight:700}
+.route span{font-size:20px}.route em{font-style:normal;font:500 11px var(--mono);color:#5a6a58;display:block}
+.route .arrow{flex:1;height:2px;background:var(--paperInk);position:relative;opacity:.6}
+.route .arrow::after{content:"";position:absolute;right:-1px;top:-4px;border:5px solid transparent;border-left-color:var(--paperInk)}
+.qrWrap{padding:18px 18px 8px;display:grid;place-items:center}
+#qr{width:100%;max-width:260px;aspect-ratio:1;display:block}
+.tFoot{padding:4px 18px 18px;text-align:center}
+.tFoot p{margin:6px 0 0;font:12px/1.5 var(--mono);color:#4b5a49}
+.tFoot .jp{font:700 14px var(--display);color:var(--paperInk);margin-top:0}
+.dl{margin-top:12px;font:500 12px var(--mono);color:var(--paper);background:var(--greenDk);border:0;border-radius:8px;padding:9px 14px;cursor:pointer}
+.dl:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+.warn{margin-top:10px;font:11px/1.45 var(--mono);color:#8a3b2a}
+@media (max-width:820px){
+  body{grid-template-columns:1fr;grid-template-rows:100svh auto}
+  aside{border-left:0;border-top:1px solid var(--line)}
+}
+@media (prefers-reduced-motion:reduce){.progress i{transition:none}}
+</style>
+</head>
+<body>
+<div class="viewer">
+  <model-viewer id="mv" src="enoden-diorama.glb" alt="Diorama do bonde Enoden 305 passando por uma rua japonesa"
+    ar ar-modes="webxr scene-viewer quick-look" ar-placement="floor" ar-scale="auto"
+    camera-controls touch-action="pan-y" autoplay animation-name="BondePassando"
+    shadow-intensity="1" shadow-softness=".8" environment-image="neutral" exposure="1.05"
+    camera-orbit="25deg 62deg 1.4m" field-of-view="32deg" interaction-prompt="none">
+    <div class="progress" slot="progress-bar"><i id="bar"></i></div>
+    <button slot="ar-button" class="arBtn" id="arBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M12 7l5 3v5l-5 3-5-3v-5z"/></svg>
+      Ver na minha mesa
+    </button>
+  </model-viewer>
+  <div class="top">
+    <div class="tag"><h1>江ノ電 305 <span>AR</span></h1><p>aponte para o chão ou para uma mesa</p></div>
+    <a class="back" href="index.html">Diorama 3D ↗</a>
+  </div>
+  <div class="status" id="status" hidden></div>
+</div>
+
+<aside>
+  <div class="ticket" role="figure" aria-label="Bilhete com QR code para abrir a realidade aumentada">
+    <div class="tHead"><b>江ノ電</b><small>AR 乗車券<br>ENODEN 305</small></div>
+    <div class="route"><div><span>藤沢</span><em>FUJISAWA</em></div><div class="arrow"></div><div><span>鎌倉</span><em>KAMAKURA</em></div></div>
+    <div class="qrWrap"><canvas id="qr" width="600" height="600" aria-label="QR code"></canvas></div>
+    <div class="tFoot">
+      <p class="jp">スキャンして、ARで見る</p>
+      <p>Aponte a câmera do celular para o código, abra o link e toque em “Ver na minha mesa”.</p>
+      <button class="dl" id="dl">Baixar QR (PNG)</button>
+      <p class="warn" id="warn" hidden></p>
+    </div>
+  </div>
+</aside>
+
+<script>
+// ---------- QR com o endereço desta própria página (funciona em qualquer domínio do GitHub Pages) ----------
+const url = location.href.split('#')[0].split('?')[0];
+const warn = document.getElementById('warn');
+if (location.protocol === 'file:') { warn.hidden = false; warn.textContent = 'Abra esta página pelo GitHub Pages (https://…) para o QR apontar para um endereço público.'; }
+function drawQR(canvas, text) {
+  const g = canvas.getContext('2d'), W = canvas.width;
+  const qr = qrcode(0, 'H'); qr.addData(text); qr.make();
+  const n = qr.getModuleCount(), quiet = 3, cell = W / (n + quiet * 2), ink = '#20301f', green = '#2f5a35';
+  g.fillStyle = '#f4eedb'; g.fillRect(0, 0, W, W);
+  const isFinder = (r, c) => (r < 7 && c < 7) || (r < 7 && c >= n - 7) || (r >= n - 7 && c < 7);
+  const rr = (x, y, w, h, rad) => { g.beginPath(); g.moveTo(x + rad, y); g.arcTo(x + w, y, x + w, y + h, rad); g.arcTo(x + w, y + h, x, y + h, rad); g.arcTo(x, y + h, x, y, rad); g.arcTo(x, y, x + w, y, rad); g.closePath(); };
+  const logo = Math.ceil(n * 0.18) | 1, l0 = Math.floor((n - logo) / 2);
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+    if (!qr.isDark(r, c) || isFinder(r, c)) continue;
+    if (r >= l0 && r < l0 + logo && c >= l0 && c < l0 + logo) continue;
+    const x = (c + quiet) * cell, y = (r + quiet) * cell;
+    g.fillStyle = ink; rr(x + cell * .06, y + cell * .06, cell * .88, cell * .88, cell * .3); g.fill();
+  }
+  for (const [r, c] of [[0, 0], [0, n - 7], [n - 7, 0]]) {
+    const x = (c + quiet) * cell, y = (r + quiet) * cell;
+    g.fillStyle = green; rr(x, y, 7 * cell, 7 * cell, cell * 1.8); g.fill();
+    g.fillStyle = '#f4eedb'; rr(x + cell, y + cell, 5 * cell, 5 * cell, cell * 1.2); g.fill();
+    g.fillStyle = green; rr(x + 2 * cell, y + 2 * cell, 3 * cell, 3 * cell, cell * .9); g.fill();
+  }
+  // selo central: bondinho estilizado
+  const cx = W / 2, cy = W / 2, R = logo * cell * .46;
+  g.fillStyle = '#f4eedb'; g.beginPath(); g.arc(cx, cy, R * 1.08, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#4f8a54'; g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.fill();
+  const bw = R * 1.3, bh = R * .8, bx = cx - bw / 2, by = cy - bh / 2 - R * .05;
+  g.fillStyle = '#e9dfb6'; rr(bx, by, bw, bh, bh * .3); g.fill();
+  g.fillStyle = '#4f8a54'; g.fillRect(bx, by + bh * .55, bw, bh * .45);
+  g.fillStyle = '#20301f'; for (let i = 0; i < 3; i++) { rr(bx + bw * (.1 + i * .29), by + bh * .15, bw * .22, bh * .3, 3); g.fill(); }
+  g.fillStyle = '#20301f'; for (const wx of [.25, .75]) { g.beginPath(); g.arc(bx + bw * wx, by + bh + R * .08, R * .1, 0, Math.PI * 2); g.fill(); }
+  g.strokeStyle = '#20301f'; g.lineWidth = R * .06; g.beginPath(); g.moveTo(cx - R * .75, by + bh + R * .2); g.lineTo(cx + R * .75, by + bh + R * .2); g.stroke();
+}
+try { drawQR(document.getElementById('qr'), url); } catch (e) { warn.hidden = false; warn.textContent = 'Não foi possível gerar o QR: ' + e.message; }
+document.getElementById('dl').onclick = () => {
+  const src = document.getElementById('qr'), out = document.createElement('canvas'); out.width = 1200; out.height = 1200;
+  drawQR(out, url);
+  out.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'enoden-305-ar-qr.png'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); });
+};
+
+// ---------- estado do visualizador e do AR ----------
+const mv = document.getElementById('mv'), status = document.getElementById('status'), bar = document.getElementById('bar');
+const say = t => { status.hidden = !t; status.textContent = t || ''; };
+mv.addEventListener('progress', e => { bar.style.width = (e.detail.totalProgress * 100) + '%'; if (e.detail.totalProgress >= 1) setTimeout(() => bar.style.width = '0', 400); });
+mv.addEventListener('load', () => { if (!mv.canActivateAR) say('Abra esta página no celular (Android com Chrome ou iPhone com Safari) para ver em AR. Aqui você pode girar o diorama.'); });
+mv.addEventListener('ar-status', e => {
+  if (e.detail.status === 'session-started') say('Mova o celular devagar para encontrar o chão ou a mesa, e toque para posicionar.');
+  else if (e.detail.status === 'object-placed') say('');
+  else if (e.detail.status === 'failed') say('Este aparelho não abriu o AR. No Android, instale o “Google Play Services for AR”.');
+  else if (e.detail.status === 'not-presenting') say('');
+});
+</script>
+</body>
+</html>
