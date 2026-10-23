@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Enoden 305 AR no QR</title>
+<meta name="description" content="Aponte a câmera para o QR code e o diorama do bonde Enoden 305 aparece em cima dele, animado.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script src="vendor/jsQR.js"></script>
+<style>
+/* Layout: vídeo da câmera em tela cheia, canvas 3D transparente por cima, painéis flutuantes */
+:root{
+  --bg:#121714; --ink:#f1ecd8; --mute:#b8b39f; --line:rgba(241,236,216,.18); --panel:rgba(20,26,22,.78);
+  --green:#4f8a54; --cream:#e9dfb6;
+  --display:"Zen Kaku Gothic New","Hiragino Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--display)}
+#cam,#gl{position:fixed;inset:0;width:100%;height:100%;display:block}
+#cam{object-fit:cover;background:#0c100e}
+#gl{pointer-events:none}
+.top{position:fixed;top:calc(14px + env(safe-area-inset-top,0px));left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));display:flex;justify-content:space-between;gap:10px;pointer-events:none;z-index:3}
+.tag{background:var(--panel);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+.tag h1{margin:0;font-size:18px;font-weight:900}
+.tag h1 span{color:var(--cream);font-weight:700}
+.tag p{margin:3px 0 0;font:12px/1.4 var(--mono);color:var(--mute)}
+.back{pointer-events:auto;align-self:flex-start;white-space:nowrap;font:500 13px var(--mono);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;text-decoration:none;backdrop-filter:blur(8px)}
+.back:hover{border-color:var(--cream)}
+.start{position:fixed;inset:0;z-index:2;display:grid;place-items:center;padding:24px;background:radial-gradient(120% 90% at 50% 30%,#2a332c 0%,#121714 70%)}
+.card{max-width:420px;text-align:center}
+.card h2{margin:0 0 8px;font-size:26px;font-weight:900}
+.card p{margin:0 0 20px;font:13px/1.6 var(--mono);color:var(--mute)}
+.big{font:900 17px var(--display);letter-spacing:.02em;color:#13200f;background:var(--cream);border:0;border-radius:999px;padding:16px 28px;box-shadow:0 10px 30px rgba(0,0,0,.45);cursor:pointer;display:inline-flex;gap:10px;align-items:center}
+.big:disabled{opacity:.55;cursor:default}
+.big:focus-visible,.hud button:focus-visible,.hud input:focus-visible,.link:focus-visible{outline:3px solid var(--green);outline-offset:3px}
+.link{display:inline-block;margin-top:16px;font:500 12px var(--mono);color:var(--cream);text-decoration:underline;text-underline-offset:3px}
+.msg{margin-top:14px;font:12px/1.5 var(--mono);color:#e6b49d;min-height:1.5em}
+.hud{position:fixed;left:0;right:0;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:3;display:flex;flex-direction:column;align-items:center;gap:10px;padding:0 16px;pointer-events:none}
+.hud > *{pointer-events:auto}
+.status{font:12px/1.4 var(--mono);color:var(--ink);background:var(--panel);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:8px;padding:8px 12px;max-width:100%;text-align:center}
+.status.ok{border-color:var(--green)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center;background:var(--panel);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:12px;padding:6px}
+.row button{font:500 13px var(--mono);color:var(--ink);background:transparent;border:1px solid transparent;border-radius:8px;padding:9px 12px;cursor:pointer}
+.row button:hover{border-color:var(--line)}
+.row .shot{background:var(--cream);color:#1a1a10;font-weight:500}
+.size{display:flex;align-items:center;gap:8px;font:12px var(--mono);color:var(--mute);padding:0 6px}
+.size input{width:110px;accent-color:var(--green)}
+.loader{position:fixed;left:0;right:0;top:0;height:3px;z-index:4}
+.loader i{display:block;height:100%;width:0;background:var(--cream);transition:width .2s}
+@media (prefers-reduced-motion:reduce){.loader i{transition:none}}
+</style>
+</head>
+<body>
+<video id="cam" playsinline muted autoplay></video>
+<canvas id="gl"></canvas>
+<div class="loader"><i id="bar"></i></div>
+
+<div class="top">
+  <div class="tag"><h1>江ノ電 305 <span>AR no QR</span></h1><p>o bonde aparece em cima do código</p></div>
+  <a class="back" href="ar.html">Voltar ↗</a>
+</div>
+
+<div class="start" id="start">
+  <div class="card">
+    <h2>Aponte para o QR</h2>
+    <p>Abra a câmera e mire no próprio QR code (na tela do computador ou impresso). O diorama aparece em cima dele, com o bonde passando. Incline e afaste o celular para ver de todos os lados.</p>
+    <button class="big" id="go" disabled>Abrir a câmera</button>
+    <div class="msg" id="msg" role="status"></div>
+    <a class="link" href="ar.html">Prefere colocar no chão ou na mesa? Abra esta versão</a>
+  </div>
+</div>
+
+<div class="hud" id="hud" hidden>
+  <div class="status" id="status" role="status">Procurando o QR code…</div>
+  <div class="row">
+    <button class="shot" id="shot">Foto</button>
+    <label class="size" for="size">tamanho <input id="size" type="range" min="50" max="220" step="5" value="100"></label>
+    <button id="anim" aria-pressed="true">Pausar bonde</button>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const $ = id => document.getElementById(id);
+const video = $('cam'), canvas = $('gl'), go = $('go'), msg = $('msg'), statusEl = $('status');
+const params = new URLSearchParams(location.search);
+const FOCAL = parseFloat(params.get('f')) || 0.78;          // distância focal ≈ 0,78 × lado maior da imagem (celular típico)
+const MODEL = 'enoden-diorama.glb', MODEL_LEN = 0.989, FIT = 1.25;   // o diorama ocupa ~1,25× o lado do QR
+
+// ---------- 3D transparente por cima do vídeo ----------
+const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setClearColor(0x000000, 0);
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+const scene = new THREE.Scene();
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+const camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.01, 200);
+const anchor = new THREE.Group(); anchor.matrixAutoUpdate = false; scene.add(anchor);
+const pivot = new THREE.Group(); anchor.add(pivot);
+const sun = new THREE.DirectionalLight('#fff3dc', 2.4); sun.position.set(-1.2, 2.2, 1.4); pivot.add(sun, sun.target);
+pivot.add(new THREE.HemisphereLight('#ffffff', '#8c8474', 0.8));
+pivot.visible = false;
+
+let mixer = null, clipAction = null, loaded = false;
+const bar = $('bar');
+new GLTFLoader().load(MODEL, gltf => {
+  pivot.add(gltf.scene);
+  if (gltf.animations.length) { mixer = new THREE.AnimationMixer(gltf.scene); clipAction = mixer.clipAction(gltf.animations[0]); clipAction.play(); }
+  loaded = true; bar.style.width = '0'; go.disabled = false;
+}, e => { if (e.total) bar.style.width = (e.loaded / e.total * 100) + '%'; }, () => { msg.textContent = 'Não consegui carregar o modelo (enoden-diorama.glb).'; });
+
+function layout() {
+  const W = innerWidth, H = innerHeight; renderer.setSize(W, H, false);
+  const vw = video.videoWidth || 1280, vh = video.videoHeight || 720, f = FOCAL * Math.max(vw, vh);
+  const s = Math.max(W / vw, H / vh), cw = W / s, ch = H / s;                  // mesmo recorte do object-fit: cover
+  camera.fov = 2 * Math.atan(vh / 2 / f) * 180 / Math.PI; camera.aspect = vw / vh;
+  camera.setViewOffset(vw, vh, (vw - cw) / 2, (vh - ch) / 2, cw, ch); camera.updateProjectionMatrix();
+}
+addEventListener('resize', layout); video.addEventListener('resize', layout); layout();
+
+// ---------- pose do QR (homografia de 4 cantos → rotação + posição da câmera) ----------
+function solve(A, B) {                                                        // eliminação de Gauss 8×8
+  const n = B.length, M = A.map((r, i) => [...r, B[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    if (Math.abs(M[p][c]) < 1e-12) return null; [M[c], M[p]] = [M[p], M[c]];
+    for (let r = c + 1; r < n; r++) { const k = M[r][c] / M[c][c]; for (let j = c; j <= n; j++) M[r][j] -= k * M[c][j]; }
+  }
+  const x = new Array(n); for (let r = n - 1; r >= 0; r--) { let s = M[r][n]; for (let j = r + 1; j < n; j++) s -= M[r][j] * x[j]; x[r] = s / M[r][r]; } return x;
+}
+const PLANE = [[-.5, -.5], [.5, -.5], [.5, .5], [-.5, .5]];                  // QR de lado 1: TL, TR, BR, BL
+const F_CV2GL = new THREE.Matrix4().set(1, 0, 0, 0, 0, -1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1);
+const A_MODEL2PLANE = new THREE.Matrix4().set(1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1);   // modelo (x, y acima, z) → plano do QR (X, Y, Z para dentro)
+function poseFrom(c, vw, vh) {
+  const f = FOCAL * Math.max(vw, vh), cx = vw / 2, cy = vh / 2, A = [], B = [];
+  for (let i = 0; i < 4; i++) {
+    const [X, Y] = PLANE[i], x = (c[i].x - cx) / f, y = (c[i].y - cy) / f;
+    A.push([X, Y, 1, 0, 0, 0, -x * X, -x * Y]); B.push(x); A.push([0, 0, 0, X, Y, 1, -y * X, -y * Y]); B.push(y);
+  }
+  const h = solve(A, B); if (!h) return null;
+  const h1 = new THREE.Vector3(h[0], h[3], h[6]), h2 = new THREE.Vector3(h[1], h[4], h[7]), t = new THREE.Vector3(h[2], h[5], 1);
+  const lam = 2 / (h1.length() + h2.length()); h1.multiplyScalar(lam); h2.multiplyScalar(lam); t.multiplyScalar(lam);
+  if (t.z < 0) { h1.negate(); h2.negate(); t.negate(); }
+  const r1 = h1.clone().normalize(), r2 = h2.clone().sub(r1.clone().multiplyScalar(r1.dot(h2))).normalize(), r3 = new THREE.Vector3().crossVectors(r1, r2);
+  const m = new THREE.Matrix4().makeBasis(r1, r2, r3).setPosition(t);
+  m.premultiply(F_CV2GL).multiply(A_MODEL2PLANE);
+  const pos = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(); m.decompose(pos, q, sc);
+  return { pos, q };
+}
+
+// ---------- leitura do QR a cada ~70 ms (jsQR) ----------
+const det = document.createElement('canvas'), dctx = det.getContext('2d', { willReadFrequently: true });
+let detBusy = false, lastDet = 0;
+function detect() {
+  const vw = video.videoWidth, vh = video.videoHeight; if (!vw || video.readyState < 2) return null;
+  const sc = Math.min(1, 640 / Math.max(vw, vh)), w = Math.round(vw * sc), h = Math.round(vh * sc);
+  if (det.width !== w || det.height !== h) { det.width = w; det.height = h; }
+  dctx.drawImage(video, 0, 0, w, h);
+  const r = window.jsQR(dctx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: 'dontInvert' });
+  if (!r) return null; const L = r.location, k = 1 / sc;
+  return { corners: [L.topLeftCorner, L.topRightCorner, L.bottomRightCorner, L.bottomLeftCorner].map(p => ({ x: p.x * k, y: p.y * k })), vw, vh };
+}
+
+// ---------- câmera ----------
+let started = false;
+go.onclick = async () => {
+  go.disabled = true; msg.textContent = '';
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { msg.textContent = 'Este navegador não liberou a câmera. Abra pelo endereço https:// do GitHub Pages, no Safari (iPhone) ou Chrome (Android).'; go.disabled = false; return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    video.srcObject = stream; await video.play(); layout();
+    $('start').hidden = true; $('hud').hidden = false; started = true;
+  } catch (e) {
+    msg.textContent = e && e.name === 'NotAllowedError' ? 'Você negou a câmera. Libere o acesso nas configurações do navegador e tente de novo.' : 'Não encontrei uma câmera aqui (' + (e && e.name || 'erro') + '). Abra no celular.';
+    go.disabled = false;
+  }
+};
+
+// ---------- controles ----------
+let userScale = 1; $('size').oninput = e => { userScale = e.target.value / 100; };
+$('anim').onclick = e => { if (!clipAction) return; clipAction.paused = !clipAction.paused; e.currentTarget.setAttribute('aria-pressed', !clipAction.paused); e.currentTarget.textContent = clipAction.paused ? 'Tocar bonde' : 'Pausar bonde'; };
+$('shot').onclick = async () => {
+  const W = canvas.width, H = canvas.height, out = document.createElement('canvas'); out.width = W; out.height = H; const g = out.getContext('2d');
+  const vw = video.videoWidth, vh = video.videoHeight, s = Math.max(W / vw, H / vh);
+  g.drawImage(video, (W - vw * s) / 2, (H - vh * s) / 2, vw * s, vh * s);
+  renderer.render(scene, camera); g.drawImage(canvas, 0, 0, W, H);
+  const blob = await new Promise(r => out.toBlob(r, 'image/png')), file = new File([blob], 'enoden-305-ar.png', { type: 'image/png' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: 'Enoden 305 em AR' }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'enoden-305-ar.png'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+};
+
+// ---------- laço principal: suaviza a pose, aparece com um "pop", some se perder o QR ----------
+const cur = { pos: new THREE.Vector3(), q: new THREE.Quaternion() }, tgt = { pos: new THREE.Vector3(), q: new THREE.Quaternion() };
+let seen = false, lastSeen = -99, appear = 0, clock = new THREE.Clock(), shown = false;
+const easeOutBack = x => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+function say(t, ok) { if (statusEl.textContent !== t) statusEl.textContent = t; statusEl.classList.toggle('ok', !!ok); }
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.1), now = performance.now() / 1000;
+  if (started && !detBusy && now - lastDet > 0.07) {
+    detBusy = true; lastDet = now;
+    try {
+      const d = detect();
+      if (d) { const p = poseFrom(d.corners, d.vw, d.vh); if (p) { tgt.pos.copy(p.pos); if (cur.q.dot(p.q) < 0) p.q.set(-p.q.x, -p.q.y, -p.q.z, -p.q.w); tgt.q.copy(p.q); if (!seen || now - lastSeen > 1.5) { cur.pos.copy(p.pos); cur.q.copy(p.q); appear = 0; } seen = true; lastSeen = now; } }
+    } catch (e) { /* quadro ruim: ignora */ }
+    detBusy = false;
+  }
+  const visible = seen && now - lastSeen < 1.5;
+  if (visible) {
+    const k = 1 - Math.exp(-dt * 12); cur.pos.lerp(tgt.pos, k); cur.q.slerp(tgt.q, k);
+    appear = Math.min(1, appear + dt / .7);
+    anchor.matrix.compose(cur.pos, cur.q, new THREE.Vector3(1, 1, 1)); anchor.matrixWorldNeedsUpdate = true;
+    const s = (FIT / MODEL_LEN) * userScale * Math.max(0.001, easeOutBack(appear));
+    pivot.scale.setScalar(s); pivot.visible = loaded;
+    say('Diorama preso ao QR. Incline o celular e afaste para ver inteiro.', true);
+  } else { pivot.visible = false; if (started) say(seen ? 'Perdi o QR de vista. Aponte de novo.' : 'Procurando o QR code… aponte para ele, com boa luz.'); }
+  if (mixer && pivot.visible) mixer.update(dt);
+  renderer.render(scene, camera);
+});
+window.__scan = { pose: () => ({ seen, visible: seen && performance.now() / 1000 - lastSeen < 1.5, pos: cur.pos.toArray(), scale: pivot.scale.x }) };
+</script>
+</body>
+</html>

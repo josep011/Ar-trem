@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Enoden 305 AR</title>
-<meta name="description" content="Veja o diorama do bonde Enoden 305 em realidade aumentada, na sua mesa ou no chão, com a câmera do celular.">
+<meta name="description" content="Veja o diorama do bonde Enoden 305 em realidade aumentada: em cima do QR code ou no chão, com a câmera do celular.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.4.0/dist/model-viewer.min.js"></script>
@@ -26,6 +26,7 @@ model-viewer{width:100%;height:100%;min-height:60vh;--poster-color:transparent;b
 .tag h1{margin:0;font-size:18px;font-weight:900}
 .tag h1 span{color:var(--cream);font-weight:700}
 .tag p{margin:3px 0 0;font:12px/1.4 var(--mono);color:var(--mute)}
+.top > div:last-child{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;align-self:flex-start}
 .back{pointer-events:auto;align-self:flex-start;white-space:nowrap;font:500 13px var(--mono);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;text-decoration:none}
 .back:hover{border-color:var(--cream)}
 .arBtn{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(24px + env(safe-area-inset-bottom,0px));font:900 17px var(--display);letter-spacing:.02em;
@@ -78,7 +79,7 @@ aside{display:flex;align-items:center;justify-content:center;padding-block:24px;
   </model-viewer>
   <div class="top">
     <div class="tag"><h1>江ノ電 305 <span>AR</span></h1><p>aponte para o chão ou para uma mesa</p></div>
-    <a class="back" href="index.html">Diorama 3D ↗</a>
+    <div><a class="back" href="scan.html">AR no QR ↗</a><a class="back" href="index.html">Diorama 3D ↗</a></div>
   </div>
   <div class="status" id="status" hidden></div>
 </div>
@@ -90,7 +91,7 @@ aside{display:flex;align-items:center;justify-content:center;padding-block:24px;
     <div class="qrWrap"><canvas id="qr" width="600" height="600" aria-label="QR code"></canvas></div>
     <div class="tFoot">
       <p class="jp">スキャンして、ARで見る</p>
-      <p>Aponte a câmera do celular para o código, abra o link e toque em “Ver na minha mesa”.</p>
+      <p>Escaneie com o celular, abra o link e toque em “Abrir a câmera”. Mire de novo neste mesmo QR: o diorama aparece em cima dele.</p>
       <button class="dl" id="dl">Baixar QR (PNG)</button>
       <p class="warn" id="warn" hidden></p>
     </div>
@@ -99,7 +100,7 @@ aside{display:flex;align-items:center;justify-content:center;padding-block:24px;
 
 <script>
 // ---------- QR com o endereço desta própria página (funciona em qualquer domínio do GitHub Pages) ----------
-const url = location.href.split('#')[0].split('?')[0];
+const url = new URL('scan.html', location.href.split('#')[0].split('?')[0]).href;   // o QR abre a página que prende o diorama em cima do próprio QR
 const warn = document.getElementById('warn');
 if (location.protocol === 'file:') { warn.hidden = false; warn.textContent = 'Abra esta página pelo GitHub Pages (https://…) para o QR apontar para um endereço público.'; }
 function drawQR(canvas, text) {

@@ -4,6 +4,7 @@ Diorama interativo em 3D de um bonde do Enoden (江ノ電 305) passando por uma 
 
 ![Dia](docs/preview-dia.png)
 ![Noite](docs/preview-noite.png)
+![AR em cima do QR](docs/preview-ar-qr.png)
 
 ## O que tem
 
@@ -30,17 +31,45 @@ Diorama interativo em 3D de um bonde do Enoden (江ノ電 305) passando por uma 
   - *Dia*, *Tarde* e *Noite*: muda o sol, o céu refletido e a exposição;
   - acende pontos de luz quentes (amarelos) e frios (brancos);
   - os faróis do bonde iluminam a rua.
+- **Acabamento leve** (quase sem custo por quadro):
+  - sombras de contato pré-desenhadas sob carros, postes, bicicletas, bonde e no pé das paredes;
+  - sujeira respingada na base das fachadas;
+  - poças d'água que aparecem à tarde e à noite, com o asfalto mais brilhante;
+  - halo de brilho em volta das luzes à noite (sprites, sem pós-processamento);
+  - fios ligando o poste aos prédios e ao poste de rua;
+  - pétalas de sakura caindo (botão "Pétalas").
+- **Passagem de nível (踏切)** na rua transversal: luzes vermelhas alternadas, cancela que desce quando o bonde se aproxima e sino.
+- **Som** (botão "Som", desligado por padrão): ronco e chiado do trilho, zumbido do motor, batidas nas juntas, sino da passagem de nível, cigarras de dia e grilos à noite. Tudo sintetizado na hora, sem arquivos de áudio.
+- **Efeito miniatura** (botão "Miniatura"): desfoque em cima e embaixo, como foto de maquete.
+- **Leveza:**
+  - as peças estáticas com o mesmo material são juntadas ao carregar (de ~4100 para ~840 chamadas de desenho por quadro, sem mudar a imagem);
+  - a qualidade se ajusta sozinha: se o FPS cair, reduz resolução, sombras e pétalas. No celular já começa no nível médio;
+  - para forçar: `?q=high`, `?q=mid` ou `?q=low` no endereço.
 - **Controles:**
   - reproduzir, pausar, reiniciar e repetir;
   - velocidade de 10 a 60 km/h;
   - câmeras lateral, 3/4, rente ao trilho e uma que acompanha o bonde.
 
-## Realidade aumentada (QR code)
+## Realidade aumentada
 
-A página `ar.html` mostra o diorama em AR: você aponta o celular para o chão ou para uma mesa, e a maquete aparece ali com o bonde indo e voltando.
+Há dois jeitos de ver o diorama em AR.
 
-- **Como abrir:** no computador, a página mostra um QR em forma de bilhete de trem. Esse QR é gerado com o endereço da própria página, então funciona em qualquer usuário do GitHub Pages. Ele também pode ser baixado em PNG para imprimir.
-- **Tamanho:** o modelo `enoden-diorama.glb` tem 8,5 MB e está em escala de maquete (1:45, cerca de 1 m de comprimento). Dá para mudar o tamanho com dois dedos.
+### Em cima do QR code (`scan.html`)
+
+1. Abra `ar.html` no computador: aparece um QR em forma de bilhete de trem (também dá para baixar em PNG e imprimir).
+2. Escaneie com o celular e toque em **Abrir a câmera**.
+3. Mire de novo no mesmo QR: o diorama aparece em cima dele, com o bonde indo e voltando e a cancela da passagem de nível descendo.
+
+- Funciona no **iPhone (Safari)** e no **Android (Chrome)**, com animação nos dois.
+- A câmera lê o QR com o [jsQR](https://github.com/cozmo/jsQR) (em `vendor/`, licença Apache 2.0) e calcula a posição e a inclinação a partir dos quatro cantos do código. Qualquer QR serve como base.
+- Tem botão de **foto** (salva ou compartilha a imagem com o diorama) e controle de **tamanho**.
+- **Dicas:** use boa luz, deixe o QR inteiro na tela e não muito pequeno. Se perder o QR por mais de 1,5 s o diorama some e volta quando encontrar de novo.
+
+### No chão ou na mesa (`ar.html`)
+
+O botão **Ver na minha mesa** abre o AR do próprio celular (model-viewer): você aponta para o chão e a maquete fica ali.
+
+- **Tamanho:** o modelo `enoden-diorama.glb` tem 9,8 MB e está em escala de maquete (1:45, cerca de 1 m de comprimento). Dá para mudar o tamanho com dois dedos. O relevo das texturas vai como normal map.
 - **Android:** use o Chrome com o “Google Play Services for AR”. Abre em WebXR ou no Scene Viewer, com o bonde animado.
 - **iPhone:** use o Safari. Abre no AR Quick Look, mas a animação do bonde não toca (o diorama aparece parado).
 - **Limitação:** o AR precisa de HTTPS, por isso só funciona depois de publicar no GitHub Pages (abrindo o arquivo direto no computador não funciona).
@@ -74,7 +103,9 @@ O projeto é um único `index.html`. O Three.js 0.160.0 vem da CDN do jsDelivr, 
 
 ```
 index.html          cena completa (HTML + CSS + JavaScript)
-ar.html             realidade aumentada + QR code (model-viewer)
+ar.html             QR em forma de bilhete + AR no chão (model-viewer)
+scan.html           AR em cima do QR (câmera + jsQR + Three.js)
+vendor/jsQR.js      leitor de QR usado no scan.html
 enoden-diorama.glb  modelo 3D animado usado no AR
 docs/               imagens de prévia usadas neste README
 ```
@@ -83,4 +114,4 @@ Todas as texturas são geradas por código (canvas), então não há arquivos de
 
 ## Desempenho
 
-A cena usa vidro com transmissão, sombras de 4096 px e várias luzes à noite. Roda bem em computadores com placa de vídeo comum. Em celulares mais fracos pode ficar lenta.
+A cena usa vidro com transmissão, sombras de até 4096 px e várias luzes à noite. As peças estáticas são juntadas ao carregar e a qualidade se ajusta sozinha, então deve rodar bem em celulares intermediários. Em aparelhos muito fracos, use `?q=low`.

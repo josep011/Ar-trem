@@ -42,18 +42,26 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--
 .tod button:focus-visible{outline:2px solid var(--cream);outline-offset:1px}
 .tod button[aria-pressed="true"]{background:var(--cream);color:#1a1a10}
 .hint{position:fixed;right:max(16px,env(safe-area-inset-right,0px));top:calc(66px + env(safe-area-inset-top,0px));font:11px/1.5 var(--mono);color:var(--mute);text-align:right}
+.extras{position:fixed;left:max(16px,env(safe-area-inset-left,0px));top:calc(92px + env(safe-area-inset-top,0px));display:flex;flex-wrap:wrap;gap:4px;background:var(--panel);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:10px;padding:5px}
+.extras button,.extras a{font:500 13px var(--mono);color:var(--ink);background:transparent;border:1px solid transparent;border-radius:7px;padding:7px 11px;cursor:pointer;text-decoration:none}
+.extras button:hover,.extras a:hover{border-color:var(--line)}
+.extras button:focus-visible,.extras a:focus-visible{outline:2px solid var(--cream);outline-offset:1px}
+.extras button[aria-pressed="true"]{background:var(--green);color:#0d140e}
+.tilt{position:fixed;left:0;right:0;height:26%;pointer-events:none;display:none;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.tilt.t{top:0;-webkit-mask-image:linear-gradient(#000 20%,transparent);mask-image:linear-gradient(#000 20%,transparent)}
+.tilt.b{bottom:0;-webkit-mask-image:linear-gradient(transparent,#000 80%);mask-image:linear-gradient(transparent,#000 80%)}
+body.tiltOn .tilt{display:block}
 @media (max-width:640px){.hint{display:none}.tod{top:auto;bottom:calc(150px + env(safe-area-inset-bottom,0px))}.tag h1{font-size:16px}.spd input{width:80px}}
-.arLink{position:fixed;top:calc(96px + env(safe-area-inset-top,0px));left:max(16px,env(safe-area-inset-left,0px));font:900 14px var(--display);color:#13200f;background:var(--cream);border-radius:999px;padding:9px 16px;text-decoration:none;box-shadow:0 6px 18px rgba(0,0,0,.3)}
-.arLink:focus-visible{outline:2px solid var(--green);outline-offset:2px}
 </style>
 </head>
 <body>
+
 <canvas id="c" aria-label="Modelo 3D do bonde Enoden 305 passando pelos trilhos"></canvas>
+<div class="tilt t"></div><div class="tilt b"></div>
 <div class="tag">
   <h1>江ノ電 305 <span>Enoden</span></h1>
   <p>bonde na rua · barbearia · loja · ponto · bicicletas · konbini na esquina</p>
 </div>
-<a class="arLink" href="ar.html">Ver em AR (QR) ↗</a>
 <div class="tod" role="toolbar" aria-label="Horário">
   <button id="tDia" aria-pressed="true">Dia</button>
   <button id="tTarde" aria-pressed="false">Tarde</button>
@@ -72,6 +80,12 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--
   <button id="cLow">Rente</button>
   <button id="cFollow" aria-pressed="false">Acompanhar</button>
 </div>
+<div class="extras" role="toolbar" aria-label="Extras">
+  <button id="bSound" aria-pressed="false" title="Liga o som: bonde, sino da passagem de nível e ambiente">Som</button>
+  <button id="bPetal" aria-pressed="true">Pétalas</button>
+  <button id="bTilt" aria-pressed="false" title="Desfoque nas bordas, efeito de maquete">Miniatura</button>
+  <a href="ar.html">Ver em AR ↗</a>
+</div>
 
 <script type="importmap">
 {"imports":{
@@ -82,6 +96,7 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // ================= medidas (metros) =================
 const L = 13.0, W = 2.5, C = 0.5;          // comprimento, largura, chanfro da cabine
@@ -1721,6 +1736,302 @@ B(1.2, .04, .07, tubeM, 5.8, 2.62, -5.55); B(1.3, .03, .12, MT.aluW, 5.8, 2.66, 
   cyl(.2, .12, .08, MT.steelGray, lx, WALK + 4.52, lz, 20);
   point('#ffb35c', 14, lx, WALK + 4.2, lz, 13);
 }
+// =====================================================================
+// 11) ACABAMENTO LEVE: sombras de contato, sujeira, poças, brilho das luzes, fios,
+//     pétalas, passagem de nível (com sino), som sintetizado e qualidade automática
+//     Tudo é textura/sprite/pouca geometria: quase nenhum custo por quadro.
+// =====================================================================
+const polish = { mode: 'dia', wet: 0, glow: 0 };
+const decalProps = { depthWrite: false, transparent: true, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 };
+function decal(geo, material, x, y, z, ry = 0, order = 2) {
+  const m = new THREE.Mesh(geo, material); m.position.set(x, y, z); m.rotation.y = ry; m.renderOrder = order;
+  m.userData.noShadow = true; m.castShadow = m.receiveShadow = false; return m;
+}
+const flat = (w, d) => new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2);
+
+// ---------- sombras de contato (oclusão ambiente "assada" numa textura) ----------
+const aoBlobTex = canvasTex(128, 128, (g, w, h) => {
+  g.shadowColor = '#000'; g.shadowBlur = 24; g.shadowOffsetX = 600; g.fillStyle = '#000';
+  g.beginPath(); g.roundRect ? g.roundRect(30 - 600, 30, w - 60, h - 60, 18) : g.rect(30 - 600, 30, w - 60, h - 60); g.fill();
+}, { srgb: false });
+const aoEdgeTex = canvasTex(8, 64, (g, w, h) => {
+  const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(.3, 'rgba(0,0,0,.45)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, w, h);
+}, { srgb: false });
+const aoMat = (map, op) => new THREE.MeshBasicMaterial({ map, color: 0x000000, opacity: op, ...decalProps });
+function aoBlob(x, z, w, d, y, op = .5, ry = 0, parent = scene) {
+  const m = decal(flat(w, d), aoMat(aoBlobTex, op), x, y + .004, z, ry, 1); parent.add(m); return m;
+}
+function aoEdge(x0, x1, zWall, depth, y, op, dir = 1) {          // faixa que escurece perto de uma parede/guia
+  const m = decal(flat(x1 - x0, depth), aoMat(aoEdgeTex, op), (x0 + x1) / 2, y + .004, zWall + dir * depth / 2, dir > 0 ? 0 : Math.PI, 1); scene.add(m); return m;
+}
+aoEdge(XL, 14.8, FZ, .75, WALK, .5);                              // pé das fachadas (barbearia → prédio de madeira)
+aoEdge(16.4, 25.2, -7.6, .6, WALK, .45);                          // frente do konbini
+aoEdge(XL, XC, -2.92, .55, GROUND, .45);                          // sarjeta (lado do fundo)
+aoEdge(XL, XR, 2.92, .55, GROUND, .45, -1);                       // sarjeta (lado da frente)
+aoBlob(18.6, -6.2, 4.7, 2.3, WALK, .62);                          // carros
+aoBlob(23.25, -6.2, 4.6, 2.3, WALK, .62);
+aoBlob(15.6, -4.0, 1.5, 1.5, WALK, .5);                           // tomate
+aoBlob(-3.75, -4.15, 1.3, 1.0, WALK, .4);                         // máquina de bebidas
+aoBlob(10.0, FZ + .65, 2.6, 1.0, WALK, .45);                      // bicicletas
+aoBlob(11.6, -3.35, .8, .8, WALK, .5); aoBlob(1.6, -3.4, .6, .6, WALK, .5); aoBlob(25.0, -3.55, .6, .6, WALK, .45);   // postes
+aoBlob(5.8, -5.2, 3.9, 2.2, WALK, .4);                            // ponto de ônibus
+{ const tb = aoBlob(0, 0, L - 1.3, 2.0, GROUND + .005, .55, 0, train); tb.material.clippingPlanes = clipPlanes; }   // embaixo do bonde (anda junto, cortado nas bordas do cubo)
+
+// ---------- sujeira respingada na base das paredes ----------
+const splashTex = canvasTex(256, 128, (g, w, h) => {
+  const gr = g.createLinearGradient(0, h, 0, 0); gr.addColorStop(0, 'rgba(60,50,40,.75)'); gr.addColorStop(.45, 'rgba(60,50,40,.22)'); gr.addColorStop(1, 'rgba(60,50,40,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 420; i++) { const x = R() * w, y = h * (.15 + R() * .85) , r = .6 + R() * 1.8; g.fillStyle = `rgba(50,42,34,${.1 + R() * .4})`; g.beginPath(); g.arc(x, h - (h - y) * R(), r, 0, 7); g.fill(); }
+  for (let i = 0; i < 26; i++) { const x = R() * w, len = 20 + R() * 60, gr2 = g.createLinearGradient(0, h - len, 0, h); gr2.addColorStop(0, 'rgba(70,58,44,0)'); gr2.addColorStop(1, 'rgba(70,58,44,.28)'); g.fillStyle = gr2; g.fillRect(x, h - len, 1 + R() * 2.5, len); }
+}, { srgb: false });
+const splashMat = new THREE.MeshBasicMaterial({ map: splashTex, color: 0x2a2219, opacity: .55, ...decalProps });
+for (const [xa, xb, z, hh] of [[-14.6, -10.4, FZ + .006, .9], [-10.0, -4.6, FZ + .006, .9], [8.6, 14.8, FZ + .006, .9], [16.4, 25.2, -7.6 + .006, .55]]) {
+  const m = decal(new THREE.PlaneGeometry(xb - xa, hh), splashMat, (xa + xb) / 2, WALK + hh / 2, z, 0, 2); scene.add(m);
+}
+
+// ---------- poças d'água (só aparecem à tarde/noite; refletem céu e luzes) ----------
+const puddleMask = canvasTex(512, 512, (g, w, h) => {
+  g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 4; i++) {
+    const cx = R() * w, cy = R() * h, n = 4 + R() * 4 | 0;
+    for (let k = 0; k < n; k++) { const x = cx + (R() - .5) * 120, y = cy + (R() - .5) * 60, rx = 25 + R() * 60, ry = 12 + R() * 28; g.fillStyle = '#fff'; g.beginPath(); g.ellipse(x, y, rx, ry, (R() - .5) * .6, 0, 7); g.fill(); }
+  }
+  g.filter = 'none';
+}, { srgb: false });
+puddleMask.wrapS = puddleMask.wrapT = THREE.RepeatWrapping;
+const puddleMat = new THREE.MeshStandardMaterial({ color: '#3a4350', metalness: .9, roughness: .06, alphaMap: puddleMask, transparent: true, opacity: 0, depthWrite: false, envMapIntensity: 1.5, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+const puddles = [];
+for (const [x0, x1, z0, z1, rep] of [[XL + 1, XC - .5, 1.45, 2.5, 3.0], [XL + 1, XC - .5, -2.5, -1.45, 3.0], [XC + .6, XR - .3, -12.5, -8.0, 1.6]]) {
+  const g = new THREE.PlaneGeometry(x1 - x0, z1 - z0).rotateX(-Math.PI / 2);
+  const tex = puddleMask.clone(); tex.needsUpdate = true; tex.repeat.set((x1 - x0) / 5, (z1 - z0) / 5); tex.offset.set(R(), R());
+  const mat2 = puddleMat.clone(); mat2.alphaMap = tex; mat2.userData.noExport = true;
+  const p = decal(g, mat2, (x0 + x1) / 2, GROUND + .0045, (z0 + z1) / 2, 0, 3); p.visible = false; p.userData.noExport = true; scene.add(p); puddles.push(p);
+}
+
+// ---------- brilho (halo) em volta das luzes: sprites aditivos, bem mais leves que bloom ----------
+const haloTex = canvasTex(128, 128, (g, w, h) => {
+  const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.16, 'rgba(255,255,255,.55)'); gr.addColorStop(.45, 'rgba(255,255,255,.14)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, w, h);
+});
+const halos = [];
+function halo(color, x, y, z, size, base, parent = scene) {
+  const m = new THREE.SpriteMaterial({ map: haloTex, color, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0, toneMapped: false });
+  const s = new THREE.Sprite(m); s.position.set(x, y, z); s.scale.setScalar(size); s.visible = false; s.renderOrder = 6; s.userData.noExport = true; parent.add(s);
+  halos.push({ s, base }); return s;
+}
+halo('#ffc278', -11.4, 2.75, FZ + .45, 1.5, .8); halo('#ffd9a0', -13.1, 1.9, FZ + .8, 2.8, .5);
+halo('#ffb04a', -4.95, 2.0, FZ + .85, 1.7, .9); halo('#ffcf8a', -6.1, 1.5, FZ + .6, 2.2, .5);
+halo('#e6f0ff', -3.75, 1.3, -3.2, 2.8, .45); halo('#f2f6ff', 5.8, 2.45, -5.0, 2.4, .6);
+halo('#f4f8ff', 10.3, 5.95, -3.2, 2.6, .8); halo('#ffb35c', 1.6, WALK + 4.3, -3.2, 3.2, .85);
+halo('#ffc23a', 15.6, WALK + .45, -3.25, 3.4, .85);
+halo('#cfeee8', 25.0, WALK + 5.35, -3.2, 3.2, .7); halo('#e8fbff', 18.6, 1.7, -7.2, 5.5, .28); halo('#e8fbff', 22.6, 1.7, -7.2, 5.5, .28);
+for (const h of [halo('#fff2d6', L / 2 + .35, 1.38, 0, 2.6, .9, train.body), halo('#ffd2a0', -L / 2 - .35, 1.38, 0, 1.4, .5, train.body)]) h.material.clippingPlanes = clipPlanes;
+
+// ---------- fios entre postes e prédios ----------
+const wireM2 = new THREE.MeshStandardMaterial({ color: '#17181a', roughness: .55, metalness: .2 });
+function wire(a, b, sag, r = .011) {
+  const p0 = new THREE.Vector3(...a), p1 = new THREE.Vector3(...b), c = p0.clone().lerp(p1, .5); c.y -= 2 * sag;
+  const t = new THREE.Mesh(new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(p0, c, p1), 28, r, 4, false), wireM2); t.userData.noShadow = true; t.castShadow = false; scene.add(t); return t;
+}
+{
+  const px = 11.6, pz = -3.35;
+  for (const [ox, tx] of [[-.45, 10.35], [.45, 12.9]]) { wire([px + ox, 7.55, pz], [tx, 6.15, -4.76], .25); B(.09, .09, .09, MT.white, tx, 6.15, -4.77); }   // ligação ao prédio
+  for (const dz of [-.05, .05]) wire([px - .5, 7.6, pz + dz], [1.6, WALK + 4.38, -3.4 + dz], .55);                                               // cabo até o poste de rua
+}
+
+// ---------- pétalas de sakura ----------
+const PET = 150;
+const petalTex = canvasTex(32, 32, (g, w, h) => {
+  g.translate(16, 16); g.rotate(-.5); const gr = g.createRadialGradient(0, 0, 1, 0, 0, 12); gr.addColorStop(0, '#fff'); gr.addColorStop(1, '#ffd0dc');
+  g.fillStyle = gr; g.beginPath(); g.ellipse(0, 0, 11, 6.5, 0, 0, 7); g.fill(); g.fillStyle = '#fff'; g.globalAlpha = .6; g.beginPath(); g.moveTo(9, 0); g.lineTo(13, -2.4); g.lineTo(13, 2.4); g.fill();
+});
+const petalPos = new Float32Array(PET * 3), petalPh = new Float32Array(PET), petalVy = new Float32Array(PET);
+for (let i = 0; i < PET; i++) { petalPos[i * 3] = XL + .3 + R() * (XR - XL - .6); petalPos[i * 3 + 1] = .5 + R() * 9; petalPos[i * 3 + 2] = ZB + .4 + R() * (ZF - ZB - .8); petalPh[i] = R() * 6.28; petalVy[i] = .25 + R() * .3; }
+const petalGeo = new THREE.BufferGeometry(); petalGeo.setAttribute('position', new THREE.BufferAttribute(petalPos, 3));
+const petals = new THREE.Points(petalGeo, new THREE.PointsMaterial({ map: petalTex, size: .3, sizeAttenuation: true, transparent: true, depthWrite: false, alphaTest: .02, color: '#ffffff', opacity: .95 }));
+petals.frustumCulled = false; petals.userData.noExport = true; petals.renderOrder = 5; scene.add(petals);
+tickers.push(dt => {
+  if (!petals.visible) return;
+  const t = state.t, n = petalGeo.drawRange.count === Infinity ? PET : petalGeo.drawRange.count;
+  for (let i = 0; i < n; i++) {
+    let x = petalPos[i * 3], y = petalPos[i * 3 + 1], z = petalPos[i * 3 + 2];
+    x += (.35 + Math.sin(t * .7 + petalPh[i]) * .5) * dt; z += Math.cos(t * .5 + petalPh[i] * 1.7) * .3 * dt; y -= petalVy[i] * dt;
+    if (y < .35) { y = 9.2; x = XL + .3 + R() * (XR - XL - .6); z = ZB + .4 + R() * (ZF - ZB - .8); }
+    if (x > XR - .2) x = XL + .2; petalPos[i * 3] = x; petalPos[i * 3 + 1] = y; petalPos[i * 3 + 2] = z;
+  }
+  petalGeo.attributes.position.needsUpdate = true;
+});
+
+// ---------- passagem de nível (fumikiri) na boca da rua transversal ----------
+const fum = { x0: 26.0, z: -3.35, armLen: 3.0, up: 1.28, ang: 1.28, t: 0, active: false, flash: 0 };
+const fumPaint = new THREE.MeshStandardMaterial({ color: '#33383a', roughness: .5, metalness: .5 });
+const stripeTex = canvasTex(256, 16, (g, w, h) => { const n = 10; for (let i = 0; i < n; i++) { g.fillStyle = i % 2 ? '#f4f2ea' : '#d3261c'; g.fillRect(i * w / n, 0, w / n + 1, h); } });
+const diagTex = canvasTex(256, 32, (g, w, h) => { g.fillStyle = '#f2c61b'; g.fillRect(0, 0, w, h); g.fillStyle = '#1b1b1b'; for (let x = -h; x < w + h; x += 32) { g.beginPath(); g.moveTo(x, h); g.lineTo(x + 16, h); g.lineTo(x + 16 + h, 0); g.lineTo(x + h, 0); g.fill(); } });
+const lampMat = [0, 1].map(() => new THREE.MeshStandardMaterial({ color: '#5a0d0a', emissive: '#ff2a18', emissiveIntensity: .05, roughness: .3 }));
+const armLampMat = new THREE.MeshStandardMaterial({ color: '#5a0d0a', emissive: '#ff2a18', emissiveIntensity: .05, roughness: .3 });
+cyl(.1, .12, .14, fumPaint, fum.x0, GROUND + .07, fum.z, 14); cyl(.055, .055, 1.12, fumPaint, fum.x0, GROUND + .62, fum.z, 12);
+const gateArm = new THREE.Group(); gateArm.name = 'GateArm'; gateArm.position.set(fum.x0, GROUND + 1.14, fum.z); scene.add(gateArm);
+{
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(fum.armLen, .065, .045), new THREE.MeshStandardMaterial({ map: stripeTex, roughness: .5 })); bar.position.x = fum.armLen / 2 - .1; bar.castShadow = true; gateArm.add(bar);
+  const cw = new THREE.Mesh(new THREE.BoxGeometry(.38, .14, .12), fumPaint); cw.position.x = -.24; cw.castShadow = true; gateArm.add(cw);
+  for (const lx of [fum.armLen - .35, fum.armLen - 1.15]) { const l = new THREE.Mesh(new THREE.SphereGeometry(.05, 12, 8), armLampMat); l.position.set(lx, .06, 0); gateArm.add(l); }
+}
+{ // poste do sinal (lado direito) com cruz de Santo André e duas luzes vermelhas alternadas
+  const sx = 29.15, sz = fum.z;
+  cyl(.1, .12, .14, fumPaint, sx, GROUND + .07, sz, 14); cyl(.05, .06, 3.0, fumPaint, sx, GROUND + 1.55, sz, 12);
+  for (const s of [-1, 1]) { const b = new THREE.Mesh(new THREE.BoxGeometry(1.15, .13, .025), new THREE.MeshStandardMaterial({ map: diagTex, roughness: .5 })); b.position.set(sx, GROUND + 2.95, sz); b.rotation.z = s * .62; b.castShadow = true; scene.add(b); }
+  B(.78, .34, .07, fumPaint, sx, GROUND + 2.35, sz);
+  [-.2, .2].forEach((ox, i) => { for (const dz of [-.042, .042]) { const d = new THREE.Mesh(new THREE.CircleGeometry(.12, 20), lampMat[i]); d.position.set(sx + ox, GROUND + 2.35, sz + dz); if (dz < 0) d.rotation.y = Math.PI; scene.add(d); } });
+  const sign = jpTex(128, 64, (g, w, h) => { g.fillStyle = '#f6f4ea'; g.fillRect(0, 0, w, h); g.strokeStyle = '#111'; g.lineWidth = 4; g.strokeRect(3, 3, w - 6, h - 6); g.fillStyle = '#111'; g.font = `900 40px ${JP}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('踏切', w / 2, h / 2 + 2); });
+  const sm = new THREE.MeshStandardMaterial({ map: sign, roughness: .5, side: THREE.DoubleSide }); const sp = new THREE.Mesh(new THREE.PlaneGeometry(.5, .25), sm); sp.position.set(sx, GROUND + 1.95, sz + .055); scene.add(sp);
+  fum.halos = [-.2, .2].map(ox => halo('#ff3a22', sx + ox, GROUND + 2.35, sz + .2, 1.5, 0));
+  fum.halos.push(halo('#ff3a22', fum.x0 + fum.armLen - .45, GROUND + 1.22, fum.z + .1, 1.0, 0));
+  halos.splice(-3, 3);                                                // são animados à parte (piscam)
+}
+// mesmo cálculo para o jogo e para o GLB de AR: o sinal toca enquanto o bonde se aproxima e passa
+function fumNear(headX, tailX, speed) { return headX > fum.x0 - (6 + speed * 2.8) && tailX < XR - 0.1; }
+tickers.push(dt => {
+  const near = fumNear(state.x + L / 2, state.x - L / 2, state.speed);
+  fum.active = near; fum.t = near ? fum.t + dt : 0;
+  const target = near && fum.t > 1.3 ? 0 : fum.up;
+  fum.ang += Math.max(-1.1 * dt, Math.min(1.1 * dt, target - fum.ang)); gateArm.rotation.z = fum.ang;
+  fum.flash += dt * (near ? 1 : 0);
+  const ph = near ? (Math.floor(fum.flash * 2.5) % 2) : -1, glow = .25 + .75 * Math.min(1, polish.glow);
+  lampMat.forEach((m, i) => { const on = ph === i; m.emissiveIntensity = on ? 3.2 : .05; });
+  armLampMat.emissiveIntensity = near && Math.floor(fum.flash * 2.5) % 2 === 0 ? 3.2 : .05;
+  fum.halos.forEach((h, i) => { const on = i < 2 ? ph === i : ph === 0; h.visible = on; h.material.opacity = on ? .9 * glow : 0; });
+  sfx.bell(near && state.playing, dt);
+});
+
+// ---------- som sintetizado (sem arquivos): trilho, motor, juntas, sino e ambiente ----------
+const sfx = (() => {
+  let ctx, master, tramBus, pan, rumG, rumF, hissG, hissF, whO, whG, ambG, ambF, crkG, nw, bellT = 0, on = false;
+  const noise = (sec, brown) => { const b = ctx.createBuffer(1, ctx.sampleRate * sec, ctx.sampleRate), d = b.getChannelData(0); let last = 0; for (let i = 0; i < d.length; i++) { const w = Math.random() * 2 - 1; last = brown ? (last + .02 * w) / 1.02 : w; d[i] = brown ? last * 3.5 : w; } return b; };
+  function init() {
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
+    ctx = new AC(); master = ctx.createGain(); master.gain.value = .8; master.connect(ctx.destination);
+    tramBus = ctx.createGain(); pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null; if (pan) { tramBus.connect(pan); pan.connect(master); } else tramBus.connect(master);
+    const nb = noise(3, true); nw = noise(3, false);
+    const src = (buf, f, type, q) => { const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; const fl = ctx.createBiquadFilter(); fl.type = type; fl.frequency.value = f; if (q) fl.Q.value = q; const g = ctx.createGain(); g.gain.value = 0; s.connect(fl); fl.connect(g); s.start(); return [g, fl]; };
+    [rumG, rumF] = src(nb, 220, 'lowpass'); rumG.connect(tramBus);
+    [hissG, hissF] = src(nw, 1800, 'bandpass', .8); hissG.connect(tramBus);
+    whO = ctx.createOscillator(); whO.type = 'sawtooth'; whO.frequency.value = 90; const wf = ctx.createBiquadFilter(); wf.type = 'lowpass'; wf.frequency.value = 650; whG = ctx.createGain(); whG.gain.value = 0; whO.connect(wf); wf.connect(whG); whG.connect(tramBus); whO.start();
+    // cigarras de dia (ruído em banda alta modulado) e grilos à noite (tom agudo pulsado)
+    const [ag, af] = src(nw, 5200, 'bandpass', 5); ambG = ag; const am = ctx.createGain(); am.gain.value = .5; ambG.connect(am); am.connect(master);
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 36; const lg = ctx.createGain(); lg.gain.value = .5; lfo.connect(lg); lg.connect(am.gain); lfo.start();
+    const co = ctx.createOscillator(); co.frequency.value = 4300; crkG = ctx.createGain(); crkG.gain.value = 0; const cm = ctx.createGain(); cm.gain.value = .5; co.connect(cm); cm.connect(crkG); crkG.connect(master);
+    const cl = ctx.createOscillator(); cl.type = 'square'; cl.frequency.value = 7; const cg = ctx.createGain(); cg.gain.value = .5; cl.connect(cg); cg.connect(cm.gain); co.start(); cl.start();
+    return true;
+  }
+  const api = {
+    get on() { return on; },
+    toggle() { if (!ctx && !init()) return false; on = !on; if (on) ctx.resume(); else ctx.suspend(); return on; },
+    update(dt) {
+      if (!on) return; const t = ctx.currentTime, v = state.playing && state.x < END ? state.speed : 0, k = Math.min(1.3, v / 7), prox = 1 / (1 + Math.pow((state.x - XM) / 15, 2)), s = (p, x, c = .12) => p.setTargetAtTime(x, t, c);
+      s(rumG.gain, .55 * k * prox); s(rumF.frequency, 140 + v * 14); s(hissG.gain, .05 * k * prox); s(hissF.frequency, 1100 + v * 70);
+      s(whG.gain, .035 * Math.min(1, k) * prox); s(whO.frequency, 70 + v * 9); if (pan) s(pan.pan, Math.max(-1, Math.min(1, (state.x - XM) / 24)));
+      s(ambG.gain, { dia: .03, tarde: .018, noite: 0 }[polish.mode], .5); s(crkG.gain, { dia: 0, tarde: .004, noite: .016 }[polish.mode], .5);
+    },
+    joint(k) {
+      if (!on || k < .2) return; const t = ctx.currentTime, s = ctx.createBufferSource(); s.buffer = nw; const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 900 + Math.random() * 500; f.Q.value = 1.2;
+      const e = ctx.createGain(); e.gain.setValueAtTime(.0001, t); e.gain.linearRampToValueAtTime(.22 * k, t + .004); e.gain.exponentialRampToValueAtTime(.0001, t + .09); s.connect(f); f.connect(e); e.connect(tramBus); s.start(t, Math.random() * 2, .12);
+      const o = ctx.createOscillator(); o.frequency.value = 62; const g2 = ctx.createGain(); g2.gain.setValueAtTime(.0001, t); g2.gain.linearRampToValueAtTime(.18 * k, t + .006); g2.gain.exponentialRampToValueAtTime(.0001, t + .12); o.connect(g2); g2.connect(tramBus); o.start(t); o.stop(t + .14);
+    },
+    bell(ringing, dt) {
+      if (!on || !ringing) { bellT = 0; return; } bellT -= dt; if (bellT > 0) return; bellT = .4;
+      const t = ctx.currentTime; for (const [f, g] of [[1245, 1], [2113, .55], [3380, .3], [4710, .14]]) {
+        const o = ctx.createOscillator(); o.frequency.value = f * (1 + (Math.random() - .5) * .003); const e = ctx.createGain(); e.gain.setValueAtTime(.0001, t); e.gain.linearRampToValueAtTime(.2 * g, t + .003); e.gain.exponentialRampToValueAtTime(.0001, t + .26); o.connect(e); e.connect(master); o.start(t); o.stop(t + .28);
+      }
+    },
+  };
+  return api;
+})();
+
+// ---------- qualidade automática (mantém leve em celular fraco) ----------
+const quality = { level: 0, lock: false, acc: 0, n: 0, t: 0 };
+function setQuality(l) {
+  quality.level = l; const dpr = devicePixelRatio || 1;
+  renderer.setPixelRatio(l === 0 ? Math.min(dpr, 2) : l === 1 ? Math.min(dpr, 1.5) : 1);
+  const sm = l === 0 ? 4096 : l === 1 ? 2048 : 1024;
+  if (sun.shadow.mapSize.x !== sm) { sun.shadow.mapSize.set(sm, sm); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
+  if (l >= 2) nightLights.forEach(({ light }) => { if (light.isSpotLight && light.castShadow) { light.castShadow = false; } });
+  petalGeo.setDrawRange(0, l === 0 ? PET : l === 1 ? Math.floor(PET * .6) : Math.floor(PET * .35));
+  if (typeof resize === 'function') resize();
+}
+function perfTick(dt) {
+  if (quality.lock || quality.level >= 2) return; quality.t += dt; if (quality.t < 3) return;
+  quality.acc += dt; quality.n++;
+  if (quality.acc >= 1.5) { const fps = quality.n / quality.acc; quality.acc = 0; quality.n = 0; if (fps < 38) { setQuality(quality.level + 1); quality.t = 0; } }
+}
+{
+  const q = new URLSearchParams(location.search).get('q');
+  if (q !== null) { quality.lock = true; setQuality(q === 'low' || q === '2' ? 2 : q === 'mid' || q === '1' ? 1 : 0); }
+  else if (matchMedia('(pointer:coarse)').matches) setQuality(1);
+}
+
+// aplica o horário aos extras (chamada por setMode)
+function applyPolish(c, name) {
+  polish.mode = name; polish.glow = c.emis; const wet = { dia: 0, tarde: .45, noite: 1 }[name]; polish.wet = wet;
+  for (const h of halos) { h.s.visible = c.emis * h.base > .01; h.s.material.opacity = Math.min(1, h.base * c.emis); }
+  for (const p of puddles) { p.visible = wet > 0; p.material.opacity = { dia: 0, tarde: .7, noite: .5 }[name]; }
+  MT.asphalt.roughness = .9 - .45 * wet; if (MT.slab) MT.slab.roughness = .9 - .35 * wet;
+  petals.material.color.set({ dia: '#ffffff', tarde: '#ffe2d0', noite: '#7e89ad' }[name]);
+}
+
+// ---------- junta peças estáticas com o mesmo material (bem menos chamadas de desenho = mais leve no celular) ----------
+function mergeStatic(container, skip) {
+  container.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(container.matrixWorld).invert(), groups = new Map();
+  const seq = n => { const a = new Uint32Array(n); for (let i = 0; i < n; i++) a[i] = i; return a; };
+  const clean = (g, mat, rel) => {
+    g.applyMatrix4(rel);
+    for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k) && !(k === 'color' && mat.vertexColors)) g.deleteAttribute(k);
+    if (!g.attributes.normal) g.computeVertexNormals();
+    if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+    if (mat.vertexColors) {
+      const c = g.attributes.color, n = g.attributes.position.count, out = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { out[i * 3] = c ? c.getX(i) : 1; out[i * 3 + 1] = c ? c.getY(i) : 1; out[i * 3 + 2] = c ? c.getZ(i) : 1; }
+      g.setAttribute('color', new THREE.BufferAttribute(out, 3));
+    }
+    if (!g.index) g.setIndex(new THREE.BufferAttribute(seq(g.attributes.position.count), 1)); g.clearGroups(); return g;
+  };
+  const put = (g, mat, o) => {
+    const key = mat.uuid + (o.castShadow ? 'c' : '') + (o.receiveShadow ? 'r' : '') + '|' + o.renderOrder;
+    let e = groups.get(key); if (!e) groups.set(key, e = { mat, cast: o.castShadow, recv: o.receiveShadow, ro: o.renderOrder, gs: [], src: new Set() });
+    e.gs.push(g); e.src.add(o);
+  };
+  container.traverse(o => {
+    if (!o.isMesh || o.isInstancedMesh || !o.visible) return;
+    for (let p = o; p && p !== container; p = p.parent) if (!p.visible || skip(p)) return;
+    const ms = [].concat(o.material); if (ms.some(m => m.transparent || m.transmission > 0)) return;
+    const rel = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld), geo = o.geometry;
+    if (Array.isArray(o.material)) {
+      const ng = geo.index ? geo.toNonIndexed() : geo, gr = geo.groups.length ? geo.groups : [{ start: 0, count: ng.attributes.position.count, materialIndex: 0 }];
+      for (const { start, count, materialIndex } of gr) {
+        const sub = new THREE.BufferGeometry();
+        for (const k of ['position', 'normal', 'uv', 'color']) { const a = ng.attributes[k]; if (a) sub.setAttribute(k, new THREE.BufferAttribute(a.array.slice(start * a.itemSize, (start + count) * a.itemSize), a.itemSize)); }
+        const m = o.material[materialIndex]; put(clean(sub, m, rel), m, o);
+      }
+    } else put(clean(geo.clone(), o.material, rel), o.material, o);
+  });
+  let before = 0, after = 0;
+  for (const e of groups.values()) {
+    const merged = e.gs.length ? mergeGeometries(e.gs, false) : null; if (!merged) continue;
+    const mesh = new THREE.Mesh(merged, e.mat); mesh.castShadow = e.cast; mesh.receiveShadow = e.recv; mesh.renderOrder = e.ro; container.add(mesh);
+    // uma peça com vários materiais só some quando todas as suas partes foram juntadas
+    for (const o of e.src) { (o.userData._parts = (o.userData._parts || 0) + 1); }
+    after++;
+  }
+  for (const e of groups.values()) for (const o of e.src) { if (o.parent && o.userData._parts) { o.parent.remove(o); before++; } }
+  return [before, after];
+}
+if (!new URLSearchParams(location.search).has('nomerge')) {
+  const bogies = train.children.filter(c => c !== train.body);
+  const st = [mergeStatic(train.body, () => false), ...bogies.map(bg => mergeStatic(bg, o => wheelsets.includes(o))), ...wheelsets.map(w => mergeStatic(w, () => false)), mergeStatic(scene, o => o === train || o === gateArm || o.isLight)];
+  console.log('merge', JSON.stringify(st));
+}
+
 // guarda a intensidade original de todos os emissivos
 const emissiveMats = new Set();
 scene.traverse(o => { if (!o.material) return; for (const m of [].concat(o.material)) if (m.emissive && m.emissiveIntensity > 0 && !(m.emissive.r === 0 && m.emissive.g === 0 && m.emissive.b === 0)) { m.userData.e0 = m.emissiveIntensity; emissiveMats.add(m); } });
@@ -1746,15 +2057,18 @@ function setMode(name) {
     light.visible = c.lights > 0; light.intensity = base * c.lights;
   }
   for (const m of emissiveMats) m.emissiveIntensity = m.userData.e0 * (1 + 2.2 * c.emis) + (m === tubeM || m === headM_ref.m || m === ledRef.m ? 2.5 * c.emis : 0);
-  for (const m of glowCurtains) { m.emissive.set(c.win > 0 ? '#ffcf8f' : '#000000'); m.emissiveMap = curtainTex; m.emissiveIntensity = .55 * c.win; m.needsUpdate = true; }
+  for (const m of glowCurtains) { m.emissive.set(c.win > 0 ? '#ffcf8f' : '#000000'); m.emissiveMap = curtainTex; m.emissiveIntensity = .55 * c.win; m.needsUpdate = true; }  applyPolish(c, name);
 }
 const headM_ref = { m: null }, ledRef = { m: null };
 scene.traverse(o => { if (o.material && o.material.emissive) { const h = '#' + o.material.emissive.getHexString(); if (h === '#ffb860') headM_ref.m = o.material; if (h === '#f4f8ff') ledRef.m = o.material; } });
+document.getElementById('bSound').onclick = e => { const on = sfx.toggle(); e.currentTarget.setAttribute('aria-pressed', on); };
+document.getElementById('bPetal').onclick = e => { petals.visible = !petals.visible; e.currentTarget.setAttribute('aria-pressed', petals.visible); };
+document.getElementById('bTilt').onclick = e => { const on = document.body.classList.toggle('tiltOn'); e.currentTarget.setAttribute('aria-pressed', on); };
 document.getElementById('tDia').onclick = () => setMode('dia');
 document.getElementById('tTarde').onclick = () => setMode('tarde');
 document.getElementById('tNoite').onclick = () => setMode('noite');
 setMode('dia');
-window.__ar = { scene, train, wheelsets, glassBox, contact, XL, XR, XM, CZ, L, WHEEL_R, BBOT };   // usado para exportar o modelo de AR
+window.__ar = { scene, train, wheelsets, glassBox, contact, XL, XR, XM, CZ, L, WHEEL_R, BBOT, gateArm, fum, fumNear, puddles, halos };   // usado para exportar o modelo de AR
 
 // ================= tremor do bonde =================
 // ruído contínuo (motor, rodas, trilho) + pancadas nas juntas do trilho, com suspensão amortecida
@@ -1765,8 +2079,8 @@ function stepSpring(s, dt, K = 900, Cd = 26) { s.v += (-K * s.y - Cd * s.v) * dt
 function tremor(dt, moving) {
   const v = moving ? state.speed : 0, k = Math.min(1.3, v / 7), t = state.t;
   const xF = state.x + 4.15, xR = state.x - 4.15, jf = Math.floor(xF / JOINT), jr = Math.floor(xR / JOINT);
-  if (moving && jPrevF !== null && jf !== jPrevF) { sprF.v -= 0.22 * k; sprRoll.v += (R() - .5) * .05 * k; }
-  if (moving && jPrevR !== null && jr !== jPrevR) { sprR.v -= 0.2 * k; sprRoll.v += (R() - .5) * .04 * k; }
+  if (moving && jPrevF !== null && jf !== jPrevF) { sprF.v -= 0.22 * k; sprRoll.v += (R() - .5) * .05 * k; sfx.joint(k); }
+  if (moving && jPrevR !== null && jr !== jPrevR) { sprR.v -= 0.2 * k; sprRoll.v += (R() - .5) * .04 * k; sfx.joint(k * .8); }
   jPrevF = jf; jPrevR = jr;
   const sub = 4; for (let i = 0; i < sub; i++) { stepSpring(sprF, dt / sub); stepSpring(sprR, dt / sub); stepSpring(sprRoll, dt / sub, 140, 6); }
   const buzz = () => (R() - .5);
@@ -1805,7 +2119,7 @@ cFollow.onclick = () => {
 };
 camera.position.set(XM + 22, 16, 36); controls.target.set(XM - 1, 2.2, -4);
 
-window.__tram = { mode: n => setMode(n), set(x) { state.x = x; }, pause() { state.playing = false; }, cam(p, t) { camAnim = null; camera.position.set(...p); controls.target.set(...t); } };
+window.__tram = { info: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles }), mode: n => setMode(n), set(x) { state.x = x; }, pause() { state.playing = false; }, cam(p, t) { camAnim = null; camera.position.set(...p); controls.target.set(...t); } };
 
 function resize() {
   const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false);
@@ -1827,6 +2141,7 @@ renderer.setAnimationLoop(() => {
   train.position.x = state.x;
   for (const ws of wheelsets) ws.rotation.z = -state.x / WHEEL_R;
   tremor(dt, moving === 1);
+  sfx.update(dt); perfTick(dt);
   if (state.follow && moved !== 0 && Math.abs(moved) < 5) { controls.target.x += moved; camera.position.x += moved; }
   if (camAnim) {
     camAnim.t = Math.min(1, camAnim.t + (reduce ? 1 : 0.03)); const e = 1 - Math.pow(1 - camAnim.t, 3);
@@ -1843,5 +2158,6 @@ if (document.fonts && document.fonts.load) {
   }).catch(() => {});
 }
 </script>
+
 </body>
 </html>
